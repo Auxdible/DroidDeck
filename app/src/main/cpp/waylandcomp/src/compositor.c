@@ -14,6 +14,9 @@
 #include <sys/timerfd.h>
 #include <sys/syscall.h>
 #include <sys/sysmacros.h>
+#include <sys/mman.h>
+#include <sys/ioctl.h>
+#include <linux/dma-buf.h>
 #include <android/log.h>
 #include <wayland-server.h>
 
@@ -485,6 +488,7 @@ static void constraints_focus_entered(struct wl_resource *target, struct wl_clie
 void dmabuf_buffer_unref(struct dmabuf_buffer *b) {
     if (!b || --b->refs > 0) return;
     vkp_image_destroy(b->img);
+    if (b->cpu_map) munmap(b->cpu_map, b->cpu_len);
     for (int i = 0; i < b->n_planes; i++)
         if (b->fd[i] >= 0) close(b->fd[i]);
     free(b);
@@ -662,6 +666,38 @@ extern void droiddeck_on_game_surface(const char *window, const char *gpu);
 extern void droiddeck_on_game_frame(void);
 extern void droiddeck_on_game_program(int pid, const char *program);
 
+// Samsung's Xclipse driver refuses to import the guest's dma-bufs, so linear 8-bit frames are read on the CPU instead.
+static int copy_linear_dmabuf(struct surface *s, struct dmabuf_buffer *b) {
+    if (b->modifier != MOD_LINEAR || b->n_planes != 1 ||
+        (b->format != FOURCC('A', 'R', '2', '4') && b->format != FOURCC('X', 'R', '2', '4')))
+        return 0;
+    if (!b->cpu_map) {
+        size_t len = (size_t)b->offset[0] + (size_t)b->stride[0] * (size_t)b->height;
+        void *p = mmap(NULL, len, PROT_READ, MAP_SHARED, b->fd[0], 0);
+        if (p == MAP_FAILED) {
+            WLOGE("dmabuf: mmap for the CPU copy failed (%s)", strerror(errno));
+            b->modifier = MOD_INVALID;
+            return 0;
+        }
+        b->cpu_map = p;
+        b->cpu_len = len;
+    }
+    if (s->shm_img && (vkp_image_width(s->shm_img) != b->width || vkp_image_height(s->shm_img) != b->height)) {
+        vkp_image_destroy(s->shm_img);
+        s->shm_img = NULL;
+    }
+    if (!s->shm_img) s->shm_img = vkp_image_create_shm(b->width, b->height);
+    if (!s->shm_img) return 0;
+    struct pollfd pfd = {.fd = b->fd[0], .events = POLLIN};
+    poll(&pfd, 1, 100);
+    struct dma_buf_sync sync = {.flags = DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ};
+    ioctl(b->fd[0], DMA_BUF_IOCTL_SYNC, &sync);
+    vkp_image_upload_shm(s->shm_img, (const uint8_t *)b->cpu_map + b->offset[0], (int)b->stride[0]);
+    sync.flags = DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ;
+    ioctl(b->fd[0], DMA_BUF_IOCTL_SYNC, &sync);
+    return 1;
+}
+
 static void take_dmabuf(struct surface *s, struct dmabuf_buffer *b, struct wl_resource *buffer) {
     const int repeat = s->dmabuf == buffer && s->dmabuf_buf == b;
     if (!repeat) {
@@ -682,7 +718,8 @@ static void take_dmabuf(struct surface *s, struct dmabuf_buffer *b, struct wl_re
                   b->format, (unsigned long long)b->modifier);
         }
     }
-    if (s->shm_img) { vkp_image_destroy(s->shm_img); s->shm_img = NULL; }
+    const int cpu = !b->img && copy_linear_dmabuf(s, b);
+    if (s->shm_img && !cpu) { vkp_image_destroy(s->shm_img); s->shm_img = NULL; }
     if (s->announced_vulkan && s->buf_w && s->buf_h &&
         (s->buf_w != b->width || s->buf_h != b->height)) {
         char name[160];
@@ -693,7 +730,7 @@ static void take_dmabuf(struct surface *s, struct dmabuf_buffer *b, struct wl_re
     s->buf_w = b->width;
     s->buf_h = b->height;
     s->buf_alpha = (b->format & 0xff) == 'A';
-    s->has_content = b->img != NULL;
+    s->has_content = b->img != NULL || cpu;
     if (!repeat) g_stat_dmabuf++;
     const int announced_now = !s->announced_vulkan;
     if (!s->announced_vulkan) {
@@ -707,6 +744,9 @@ static void take_dmabuf(struct surface *s, struct dmabuf_buffer *b, struct wl_re
                        vkp_modifier_name(b->modifier),
                        ahb_swapchain_has_ahb(b) ? "gralloc buffers: can go on the display layer without a copy"
                                                 : "dma-buf: copied into the screen swapchain");
+        else if (cpu)
+            droiddeck_log("vulkan", "%s is presenting GPU frames through Wayland: %dx%d, the compositor's driver "
+                       "could not import them, copying each frame on the CPU", name, b->width, b->height);
         else if (ahb_swapchain_has_ahb(b))
             droiddeck_log("vulkan", "%s is presenting GPU frames through Wayland: %dx%d on its own display layer only "
                        "(gralloc buffers the compositor cannot import for the copy path)",
@@ -715,7 +755,7 @@ static void take_dmabuf(struct surface *s, struct dmabuf_buffer *b, struct wl_re
             droiddeck_log("error", "could not import GPU frames from %s (%dx%d, modifier %#llx)",
                        name, b->width, b->height, (unsigned long long)b->modifier);
     }
-    if (s != g_hud_surface && (b->img || ahb_swapchain_has_ahb(b)) &&
+    if (s != g_hud_surface && (b->img || cpu || ahb_swapchain_has_ahb(b)) &&
         (!g_hud_surface || now_ns() - g_hud_alive_ns > 1000000000LL ||
          (announced_now && (int64_t)b->width * b->height >= (int64_t)g_hud_surface->buf_w * g_hud_surface->buf_h))) {
         char name[160];
