@@ -26,6 +26,7 @@ public class LinuxVulkanDriverManager {
     private static final String TAG = "LinuxVulkanDriver";
     public static final String DIR_NAME = "linux_vulkan_drivers";
     public static final String LIB_NAME = "libvulkan_freedreno.so";
+    public static final String RADEON_LIB_NAME = "libvulkan_radeon.so";
     public static final String ICD_NAME = "icd.json";
     public static final String META_NAME = "meta.json";
 
@@ -45,7 +46,30 @@ public class LinuxVulkanDriverManager {
     public boolean isInstalled(String id) {
         if (id == null || id.isEmpty() || id.contains("/") || id.contains("..")) return false;
         File dir = getDriverDir(id);
-        return new File(dir, LIB_NAME).isFile() && new File(dir, ICD_NAME).isFile();
+        return libraryIn(dir) != null && new File(dir, ICD_NAME).isFile();
+    }
+
+    static File libraryIn(File dir) {
+        for (String name : new String[]{LIB_NAME, RADEON_LIB_NAME}) {
+            File lib = new File(dir, name);
+            if (lib.isFile()) return lib;
+        }
+        return null;
+    }
+
+    static String storedName(String soName) {
+        if (soName.startsWith("libvulkan_freedreno") && soName.endsWith(".so")) return LIB_NAME;
+        if (soName.startsWith("libvulkan_radeon") && soName.endsWith(".so")) return RADEON_LIB_NAME;
+        return null;
+    }
+
+    public boolean isRadeon(String id) {
+        return isInstalled(id) && new File(getDriverDir(id), RADEON_LIB_NAME).isFile();
+    }
+
+    public String firstRadeonDriver() {
+        for (String id : enumerateInstalledDrivers()) if (isRadeon(id)) return id;
+        return null;
     }
 
     public String getIcdPath(String id) {
@@ -107,10 +131,11 @@ public class LinuxVulkanDriverManager {
                     if (entry.isDirectory()) continue;
                     String base = new File(entry.getName()).getName();
                     if (base.isEmpty()) continue;
-                    if (base.startsWith("libvulkan_freedreno") && base.endsWith(".so")) {
-                        if (soName != null) Log.w(TAG, "zip has several libvulkan_freedreno*.so; using the first (" + soName + ")");
+                    String stored = storedName(base);
+                    if (stored != null) {
+                        if (soName != null) Log.w(TAG, "zip has several Vulkan driver libraries; using the first (" + soName + ")");
                         else {
-                            Files.copy(zis, new File(tmpDir, LIB_NAME).toPath(), StandardCopyOption.REPLACE_EXISTING);
+                            Files.copy(zis, new File(tmpDir, stored).toPath(), StandardCopyOption.REPLACE_EXISTING);
                             soName = base;
                         }
                     } else if (base.equals(META_NAME)) {
@@ -142,7 +167,10 @@ public class LinuxVulkanDriverManager {
             if (soName == null) {
                 throw new IllegalArgumentException(context.getString(R.string.lvd_no_library));
             }
-            File so = new File(tmpDir, LIB_NAME);
+            File so = libraryIn(tmpDir);
+            if (so == null) {
+                throw new IllegalArgumentException(context.getString(R.string.lvd_no_library));
+            }
             if (!isAarch64Elf(so)) {
                 throw new IllegalArgumentException(context.getString(R.string.lvd_not_aarch64, soName));
             }
@@ -167,7 +195,7 @@ public class LinuxVulkanDriverManager {
             JSONObject icd = new JSONObject();
             icd.put("file_format_version", "1.0.0");
             JSONObject icdBody = new JSONObject();
-            icdBody.put("library_path", new File(dir, LIB_NAME).getAbsolutePath());
+            icdBody.put("library_path", new File(dir, so.getName()).getAbsolutePath());
             icdBody.put("api_version", "1.1.274");
             icd.put("ICD", icdBody);
             if (!FileUtils.writeString(new File(tmpDir, ICD_NAME), icd.toString(2))) throw new IOException("cannot write icd.json");

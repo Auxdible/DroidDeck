@@ -21,6 +21,7 @@ data class GpuInfo(
         A7XX("Adreno 7xx"),
         A6XX("Adreno 6xx"),
         ADRENO_UNKNOWN("Adreno"),
+        XCLIPSE("Samsung Xclipse"),
         NOT_ADRENO("Not an Adreno GPU");
 
         fun label(context: Context): String = if (this == NOT_ADRENO) context.getString(R.string.gpuinfo_not_adreno) else label
@@ -31,6 +32,7 @@ data class GpuInfo(
     val support: Support
         get() = when {
             family == Family.NOT_ADRENO -> Support.UNSUPPORTED
+            family == Family.XCLIPSE -> if (model in Xclipse.DRIVER_MODELS) Support.UNTESTED else Support.UNSUPPORTED
             family == Family.A6XX && model == 650 -> Support.TESTED
             family == Family.A8XX -> Support.TESTED
             family == Family.A7XX && model >= 725 -> Support.TESTED
@@ -40,15 +42,21 @@ data class GpuInfo(
     val supportText: String
         get() = when (support) {
             Support.TESTED -> "Supported"
-            Support.UNTESTED -> if (family == Family.A7XX_LOW) "Experimental: its drivers are test builds"
+            Support.UNTESTED -> if (family == Family.XCLIPSE) "Experimental: needs an imported RADV Xclipse Linux driver"
+                else if (family == Family.A7XX_LOW) "Experimental: its drivers are test builds"
                 else "Outside tested hardware (Adreno 650, 725 and newer): it may not run"
-            Support.UNSUPPORTED -> "Not supported: DroidDeck needs an Adreno (Snapdragon) GPU"
+            Support.UNSUPPORTED -> if (family == Family.XCLIPSE) "Not supported: no RADV Xclipse driver for this GPU yet"
+                else "Not supported: DroidDeck needs an Adreno (Snapdragon) GPU"
         }
 
     fun supportText(context: Context): String = context.getString(when (support) {
         Support.TESTED -> R.string.gpuinfo_supported
-        Support.UNTESTED -> if (family == Family.A7XX_LOW) R.string.gpuinfo_experimental else R.string.gpuinfo_below_tested
-        Support.UNSUPPORTED -> R.string.gpuinfo_unsupported
+        Support.UNTESTED -> when (family) {
+            Family.XCLIPSE -> R.string.gpuinfo_xclipse_experimental
+            Family.A7XX_LOW -> R.string.gpuinfo_experimental
+            else -> R.string.gpuinfo_below_tested
+        }
+        Support.UNSUPPORTED -> if (family == Family.XCLIPSE) R.string.gpuinfo_xclipse_unsupported else R.string.gpuinfo_unsupported
     })
 
     fun displayName(context: Context): String = if (name == UNNAMED) context.getString(R.string.gpu_this_gpu) else name
@@ -73,6 +81,17 @@ data class GpuInfo(
             }
             val family = familyOf(adreno, model)
             val samsung = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+            if (!adreno) {
+                val socModel = SocNames.model()
+                if (Xclipse.detect(socModel)) {
+                    val xclipse = Xclipse.model(socModel)
+                    return GpuInfo(
+                        name = if (xclipse > 0) "Xclipse $xclipse" else "Xclipse",
+                        model = xclipse, family = Family.XCLIPSE, soc = SocNames.label(socModel),
+                        oneUi8Gen2 = false, modelSource = if (xclipse > 0) "platform" else "",
+                    )
+                }
+            }
             return GpuInfo(
                 name = if (!adreno) Build.HARDWARE.ifBlank { UNNAMED } else if (model > 0) "Adreno $model" else "Adreno",
                 model = model, family = family, soc = soc,

@@ -1822,6 +1822,8 @@
     <string name="gpuinfo_experimental">Experimental: its drivers are test builds</string>
     <string name="gpuinfo_below_tested">Below tested hardware (Adreno 725 and newer): it may not run</string>
     <string name="gpuinfo_unsupported">Not supported: DroidDeck needs an Adreno (Snapdragon) GPU</string>
+    <string name="gpuinfo_xclipse_experimental">Experimental: needs an imported RADV Xclipse Linux driver</string>
+    <string name="gpuinfo_xclipse_unsupported">Not supported: no RADV Xclipse driver for this GPU yet</string>
 
     <string name="turnip_rate_limited">GitHub\'s rate limit was hit - try again later</string>
     <string name="turnip_github_http">GitHub answered HTTP %1$d</string>
@@ -1837,7 +1839,7 @@
     <string name="turnip_reject_library_missing">meta.json names %1$s, which is not in the zip</string>
     <string name="turnip_reject_not_aarch64">%1$s is not a 64-bit AArch64 ELF shared library</string>
     <string name="turnip_reject_glibc">%1$s links glibc - a \"-Linux\" Turnip, which belongs under \"Linux runtime driver\"</string>
-    <string name="lvd_no_library">No libvulkan_freedreno*.so in this zip. An Android (AdrenoTools) or -Wayland Turnip zip is not a Linux runtime driver.</string>
+    <string name="lvd_no_library">No libvulkan_freedreno*.so or libvulkan_radeon*.so in this zip. An Android (AdrenoTools) or -Wayland Turnip zip is not a Linux runtime driver.</string>
     <string name="lvd_not_aarch64">%1$s is not a 64-bit AArch64 ELF shared library.</string>
     <string name="lvd_not_glibc">%1$s is not a glibc driver - it links Android\'s libc. The Linux runtime needs a \"-Linux\" zip; a plain or \"-Wayland\" Turnip cannot be loaded by the Steam client at all.</string>
     <string name="bundle_no_manifest">Not a driver bundle: no manifest.json naming an android and a linux driver</string>

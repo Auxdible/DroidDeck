@@ -12,7 +12,7 @@ public final class LinuxVulkanDriver {
 
     public static final String HELP_TEXT =
             "The driver the Steam client, the games it launches and the desktop's programs render on, "
-            + "inside the Linux runtime. Imported \"-Linux\" Turnip zips only: these are Linux processes "
+            + "inside the Linux runtime. Imported \"-Linux\" Turnip zips, or a glibc RADV build on Samsung Xclipse: these are Linux processes "
             + "and cannot load an Android or Wayland driver. Frames still reach the screen through the "
             + "display driver below. Takes effect at the next session start.";
 
@@ -34,6 +34,10 @@ public final class LinuxVulkanDriver {
     }
 
     public static String resolveIcdPath(Context context, String value) {
+        if ((value == null || value.isEmpty()) && GpuInfo.Companion.detect().getFamily() == GpuInfo.Family.XCLIPSE) {
+            value = new LinuxVulkanDriverManager(context).firstRadeonDriver();
+            if (value == null) Log.w(TAG, "Samsung Xclipse GPU with no imported RADV Linux driver; games draw on the CPU");
+        }
         if (value == null || value.isEmpty()) return null;
         LinuxVulkanDriverManager m = new LinuxVulkanDriverManager(context);
         String icd = m.getIcdPath(value);

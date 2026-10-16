@@ -66,6 +66,28 @@ class GpuDetectionTest {
         assertEquals("Adreno 8xx", Family.A8XX.label)
     }
 
+    private fun xclipse(model: Int) =
+        GpuInfo(name = "x", model = model, family = Family.XCLIPSE, soc = "", oneUi8Gen2 = false)
+
+    @Test fun xclipseModelsComeFromTheSocModel() {
+        assertEquals(920, Xclipse.model("s5e9925"))
+        assertEquals(530, Xclipse.model("S5E8845"))
+        assertEquals(940, Xclipse.model(" s5e9945 "))
+        assertEquals(950, Xclipse.model("s5e9955"))
+        assertEquals(0, Xclipse.model("SM8650"))
+        assertEquals(0, Xclipse.model(""))
+    }
+
+    @Test fun xclipseIsExperimentalOnlyWhereTheRadvPortRuns() {
+        assertEquals(Support.UNTESTED, xclipse(920).support)
+        assertEquals(Support.UNTESTED, xclipse(530).support)
+        assertEquals(Support.UNTESTED, xclipse(940).support)
+        assertEquals(Support.UNSUPPORTED, xclipse(950).support)
+        assertEquals(Support.UNSUPPORTED, xclipse(0).support)
+        assertEquals("Experimental: needs an imported RADV Xclipse Linux driver", xclipse(940).supportText)
+        assertEquals("Not supported: no RADV Xclipse driver for this GPU yet", xclipse(950).supportText)
+    }
+
     @Test fun platformCodeNamesIncludingCaseAndUnknowns() {
         assertEquals(640, GpuInfo.platformModel("msmnile"))
         assertEquals(650, GpuInfo.platformModel("kona"))

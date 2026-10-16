@@ -10,6 +10,8 @@ object SocNames {
         "SM8750" to "Snapdragon 8 Elite", "SM8850" to "Snapdragon 8 Elite Gen 5",
         "SM7325" to "Snapdragon 778G", "SM7450" to "Snapdragon 7 Gen 1", "SM7550" to "Snapdragon 7 Gen 3",
         "SM6375" to "Snapdragon 695",
+        "S5E9925" to "Exynos 2200", "S5E8845" to "Exynos 1480", "S5E9945" to "Exynos 2400",
+        "S5E8855" to "Exynos 1580", "S5E9955" to "Exynos 2500",
     )
 
     private val PLATFORMS = mapOf(

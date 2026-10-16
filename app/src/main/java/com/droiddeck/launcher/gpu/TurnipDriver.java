@@ -285,6 +285,10 @@ public final class TurnipDriver {
         String quest = QuestExperimental.INSTANCE.defaultAndroidDriver();
         if (quest != null) return quest;
         String model = gpuModel();
+        if (model == null && !com.droiddeck.launcher.core.DeviceSupport.INSTANCE.adreno() && Xclipse.detect()) {
+            Log.i(TAG, "Samsung Xclipse GPU: the compositor uses the system Vulkan driver");
+            return null;
+        }
         Log.i(TAG, "gpu model: " + (model == null ? "unknown" : model));
         if (model != null) {
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d)\\d\\d").matcher(model);

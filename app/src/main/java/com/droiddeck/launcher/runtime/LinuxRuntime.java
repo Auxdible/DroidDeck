@@ -216,9 +216,39 @@ public final class LinuxRuntime {
         try {
             st = Os.stat(KGSL_DEVICE);
         } catch (ErrnoException e) {
+            bindXclipseNode(context, cmd);
+            return;
+        }
+        bindFakeDrmNode(context, cmd, KGSL_DEVICE, st.st_rdev,
+                "DRIVER=kgsl-3d0\nMODALIAS=platform:kgsl-3d0\n", "msm_drm");
+    }
+
+    // Samsung's sgpu is a real DRM device; libdrm only needs a sysfs entry when the host's is unreadable.
+    private static void bindXclipseNode(Context context, List<String> cmd) {
+        File node = com.droiddeck.launcher.gpu.Xclipse.renderNode();
+        if (node == null) return;
+        StructStat st;
+        try {
+            st = Os.stat(node.getPath());
+        } catch (ErrnoException e) {
             return;
         }
         long dev = st.st_rdev;
+        long major = ((dev >> 8) & 0xfff) | ((dev >> 32) & ~0xfffL);
+        long minor = (dev & 0xff) | ((dev >> 12) & ~0xffL);
+        if (new File("/sys/dev/char/" + major + ":" + minor + "/device/uevent").canRead()
+                && new File("/dev/dri").list() != null) {
+            android.util.Log.i("LinuxRuntime", "gpu: Xclipse " + node + " with the host's own sysfs");
+            return;
+        }
+        android.util.Log.i("LinuxRuntime", "gpu: Xclipse " + node + " with a stand-in sysfs entry");
+        bindFakeDrmNode(context, cmd, node.getPath(), dev,
+                "DRIVER=sgpu\nOF_NAME=sgpu\nOF_FULLNAME=/sgpu\nOF_COMPATIBLE_0=samsung,sgpu\nOF_COMPATIBLE_N=1\n"
+                        + "MODALIAS=of:NsgpuT(null)Csamsung,sgpu\n", "sgpu");
+    }
+
+    private static void bindFakeDrmNode(Context context, List<String> cmd, String hostNode, long dev,
+                                        String uevent, String driverName) {
         long major = ((dev >> 8) & 0xfff) | ((dev >> 32) & ~0xfffL);
         long minor = (dev & 0xff) | ((dev >> 12) & ~0xffL);
         String node = "renderD" + minor;
@@ -233,22 +263,21 @@ public final class LinuxRuntime {
             new File(dri, node).createNewFile();
             Files.write(new File(drm, "dev").toPath(),
                     (major + ":" + minor + "\n").getBytes(StandardCharsets.UTF_8));
-            Files.write(new File(device, "uevent").toPath(),
-                    "DRIVER=kgsl-3d0\nMODALIAS=platform:kgsl-3d0\n".getBytes(StandardCharsets.UTF_8));
+            Files.write(new File(device, "uevent").toPath(), uevent.getBytes(StandardCharsets.UTF_8));
             File subsystem = new File(device, "subsystem");
             if (!Files.isSymbolicLink(subsystem.toPath())) {
                 Os.symlink("/sys/bus/platform", subsystem.getPath());
             }
             File driver = new File(device, "driver");
             if (!Files.isSymbolicLink(driver.toPath())) {
-                Os.symlink("/sys/bus/platform/drivers/msm_drm", driver.getPath());
+                Os.symlink("/sys/bus/platform/drivers/" + driverName, driver.getPath());
             }
         } catch (IOException | ErrnoException e) {
             return;
         }
         bind(cmd, new File(base, "sys").getPath() + ":/sys/dev/char");
         bind(cmd, dri.getPath() + ":/dev/dri");
-        bind(cmd, KGSL_DEVICE + ":/dev/dri/" + node);
+        bind(cmd, hostNode + ":/dev/dri/" + node);
         bindDrmClass(base, cmd, node, major + ":" + minor);
     }
 
