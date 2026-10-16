@@ -533,6 +533,9 @@ class SessionService : Service() {
         guest.add("WAYLAND_DISPLAY=wayland-0")
         guest.add("BL_ANDROID_CLIPBOARD=" + File(filesDir, "session/android-clipboard").path)
         guest.add("GAMESCOPE_FORCE_GENERAL_QUEUE=1")
+        // Samsung's sgpu kernel (DRM 3.42) has no DRM_IOCTL_SYNCOBJ_EVENTFD, so gamescope never sees an
+        // explicitly synced commit become ready and shows nothing; hiding the syncobj global keeps clients on implicit sync.
+        if (com.droiddeck.launcher.gpu.Xclipse.detect()) guest.add("gamescope_drm_debug_disable_explicit_sync=1")
         guest.add("MESA_LOADER_DRIVER_OVERRIDE=zink")
         guest.add("GALLIUM_DRIVER=zink")
         guest.add("LIBGL_KOPPER_DRI2=true")
