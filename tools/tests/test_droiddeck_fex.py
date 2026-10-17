@@ -168,6 +168,14 @@ class LocateTest(FexTestCase):
         newer = self.runtime("3.0.20261001.1")
         self.assertEqual(FEX["runtime_platform"](), str(newer))
 
+    def test_steam_linux_runtime_4_is_preferred_over_sniper(self):
+        self.runtime()
+        platform = self.steam / "steamapps/common/SteamLinuxRuntime_4/steamrt4_platform_4.0.20261001.1"
+        self.write(platform / "files/lib/x86_64-linux-gnu/libc.so.6", elf(62))
+        with gzip.open(platform / "usr-mtree.txt.gz", "wt") as out:
+            out.write("#mtree\n")
+        self.assertEqual(FEX["runtime_platform"](), str(platform))
+
 
 class PrepareTest(FexTestCase):
     def test_materialize_links_the_tree_in_place(self):

@@ -28,7 +28,8 @@ URUNTIME = "/usr/local/lib/droiddeck/uruntime"
 HOST_PRELOAD = "/etc/ld.so.preload"
 FEX_APPID = "3127680"
 SNIPER_APPID = "1628350"
-INSTALL_DIRS = {FEX_APPID: "FEX-Emu", SNIPER_APPID: "SteamLinuxRuntime_sniper"}
+STEAMRT4_APPID = "4183110"
+INSTALL_DIRS = {FEX_APPID: "FEX-Emu", SNIPER_APPID: "SteamLinuxRuntime_sniper", STEAMRT4_APPID: "SteamLinuxRuntime_4"}
 MARKER = ".droiddeck-fex"
 LAYOUT = 1
 GUEST_LIBDIRS = (("x86_64", "lib/x86_64-linux-gnu"), ("i386", "lib/i386-linux-gnu"))
@@ -164,18 +165,23 @@ def platform_version(path):
     return tuple(int(part) for part in re.findall(r"\d+", os.path.basename(path)))
 
 
-def runtime_platform():
-    runtime = app_dir(SNIPER_APPID)
+def newest_platform(appid):
+    runtime = app_dir(appid)
     if not runtime:
         return None
     try:
         entries = os.listdir(runtime)
     except OSError:
         return None
-    platforms = [os.path.join(runtime, entry) for entry in entries if entry.startswith("sniper_platform_")]
+    platforms = [os.path.join(runtime, entry) for entry in entries if "_platform_" in entry]
     platforms = [path for path in platforms if os.path.isdir(os.path.join(path, "files"))
                  and os.path.isfile(os.path.join(path, "usr-mtree.txt.gz"))]
     return max(platforms, key=platform_version, default=None)
+
+
+def runtime_platform():
+    # Games built against GCC 11 or newer need GLIBCXX_3.4.29+, which sniper's libstdc++ lacks.
+    return newest_platform(STEAMRT4_APPID) or newest_platform(SNIPER_APPID)
 
 
 def unescape(raw):
