@@ -1,6 +1,7 @@
 package com.droiddeck.launcher.input
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -9,9 +10,12 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.Window
 import android.view.WindowInsets
 import kotlin.math.abs
 import kotlin.math.max
@@ -123,8 +127,35 @@ class OnScreenControls(
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
 
+    private var frameInFlight = false
+    private var redrawPending = false
+    private val frameDone = Window.OnFrameMetricsAvailableListener { _, _, _ -> onFrameDone() }
+    private val frameTimeout = Runnable { onFrameDone() }
+
     init {
         applySettings()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (!editing) (context as? Activity)?.window?.addOnFrameMetricsAvailableListener(frameDone, Handler(Looper.getMainLooper()))
+    }
+
+    // HWUI blocks the UI thread once its buffers wait on a GPU busy with the game, and touches queue behind it;
+    // keeping one overlay frame in flight lets input reach the pad while the GPU catches up.
+    private fun redraw() {
+        if (frameInFlight) { redrawPending = true; return }
+        frameInFlight = true
+        removeCallbacks(frameTimeout)
+        postDelayed(frameTimeout, FRAME_TIMEOUT_MS)
+        invalidate()
+    }
+
+    private fun onFrameDone() {
+        if (!frameInFlight) return
+        frameInFlight = false
+        removeCallbacks(frameTimeout)
+        if (redrawPending) { redrawPending = false; redraw() }
     }
 
     private fun dp(value: Float) = value * resources.displayMetrics.density
@@ -208,6 +239,9 @@ class OnScreenControls(
     }
 
     override fun onDetachedFromWindow() {
+        if (!editing) runCatching { (context as? Activity)?.window?.removeOnFrameMetricsAvailableListener(frameDone) }
+        removeCallbacks(frameTimeout)
+        frameInFlight = false
         releaseAll()
         super.onDetachedFromWindow()
     }
@@ -701,7 +735,7 @@ class OnScreenControls(
                 for (target in used) write(state, target, target in held)
             }
         }
-        invalidate()
+        redraw()
     }
 
     private fun write(state: PadState, target: String, down: Boolean) {
@@ -743,6 +777,7 @@ class OnScreenControls(
 
     private companion object {
         const val DOUBLE_TAP_MS = 300L
+        const val FRAME_TIMEOUT_MS = 500L
         const val MIN_FACE_MM = 9.5f
         const val FULL_SIZE_HEIGHT_MM = 85f
         const val BOTTOM_MARGIN_MM = 5f
