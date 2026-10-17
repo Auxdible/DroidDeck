@@ -202,6 +202,8 @@ struct surface {
 
 
     struct vkp_image *shm_img;
+    unsigned cpu_frames;
+    int64_t cpu_copy_ns;
     struct wl_resource *dmabuf;
     struct dmabuf_buffer *dmabuf_buf;
     struct wl_listener dmabuf_destroy;
@@ -689,12 +691,21 @@ static int copy_linear_dmabuf(struct surface *s, struct dmabuf_buffer *b) {
     if (!s->shm_img) s->shm_img = vkp_image_create_shm(b->width, b->height);
     if (!s->shm_img) return 0;
     struct pollfd pfd = {.fd = b->fd[0], .events = POLLIN};
+    const int64_t wait_start = now_ns();
     poll(&pfd, 1, 100);
+    const int64_t copy_start = now_ns();
     struct dma_buf_sync sync = {.flags = DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ};
     ioctl(b->fd[0], DMA_BUF_IOCTL_SYNC, &sync);
     vkp_image_upload_shm(s->shm_img, (const uint8_t *)b->cpu_map + b->offset[0], (int)b->stride[0]);
     sync.flags = DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ;
     ioctl(b->fd[0], DMA_BUF_IOCTL_SYNC, &sync);
+    const int64_t copy_end = now_ns();
+    s->cpu_copy_ns += copy_end - copy_start;
+    if (++s->cpu_frames % 600 == 0) {
+        WLOGE("dmabuf: CPU copy of %dx%d took %.2f ms on average over 600 frames (last fence wait %.2f ms)",
+              b->width, b->height, s->cpu_copy_ns / 600 / 1e6, (copy_start - wait_start) / 1e6);
+        s->cpu_copy_ns = 0;
+    }
     return 1;
 }
 
